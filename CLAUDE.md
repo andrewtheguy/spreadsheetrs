@@ -1,2 +1,3 @@
 - no backward compatibility
 - use project root tmp/ dir for test data
+- run cargo clippy after changes
