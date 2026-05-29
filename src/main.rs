@@ -129,7 +129,10 @@ impl eframe::App for App {
                                 };
                                 let label = egui::RichText::new(format!("{title}{arrow}"))
                                     .family(egui::FontFamily::Name("bold".into()));
-                                if ui.button(label).clicked() {
+                                let button = egui::Button::new(label)
+                                    .frame(false)
+                                    .fill(egui::Color32::TRANSPARENT);
+                                if ui.add_sized(ui.available_size(), button).clicked() {
                                     clicked = Some(col);
                                 }
                             });
