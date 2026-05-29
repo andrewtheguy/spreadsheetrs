@@ -26,14 +26,28 @@ component HeaderCell inherits Rectangle {
         clicked => { root.clicked(); }
     }
 
-    Text {
+    HorizontalLayout {
         x: 6px;
         width: parent.width - 12px;
         height: 100%;
-        vertical-alignment: center;
-        overflow: elide;
-        font-weight: 700;
-        text: root.title + (root.sorted ? (root.ascending ? " ▲" : " ▼") : "");
+        spacing: 4px;
+
+        // Title elides when too long, but the sort arrow keeps its own space so it
+        // is never clipped away.
+        Text {
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+            overflow: elide;
+            font-weight: 700;
+            text: root.title;
+        }
+
+        Text {
+            horizontal-stretch: 0;
+            vertical-alignment: center;
+            font-weight: 700;
+            text: root.sorted ? (root.ascending ? "▲" : "▼") : "";
+        }
     }
 }
 
