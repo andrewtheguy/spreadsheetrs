@@ -77,6 +77,8 @@ struct App {
     status: String,
     /// Column the table is currently sorted by, and whether it is ascending.
     sort: Option<(usize, bool)>,
+    /// Currently selected cell as `(row, column)`.
+    selected: Option<(usize, usize)>,
 }
 
 impl eframe::App for App {
@@ -94,6 +96,7 @@ impl eframe::App for App {
                             self.headers = data.headers;
                             self.rows = data.rows;
                             self.sort = None;
+                            self.selected = None;
                         }
                         Err(error) => self.status = error,
                     }
@@ -111,6 +114,7 @@ impl eframe::App for App {
                 return;
             }
 
+            let mut new_selection: Option<(usize, usize)> = None;
             egui::ScrollArea::horizontal().show(ui, |ui| {
                 TableBuilder::new(ui)
                     .striped(true)
@@ -122,6 +126,13 @@ impl eframe::App for App {
                         let mut clicked: Option<usize> = None;
                         for (col, title) in self.headers.iter().enumerate() {
                             header.col(|ui| {
+                                if self.selected.map(|(_, c)| c == col).unwrap_or(false) {
+                                    ui.painter().rect_filled(
+                                        ui.max_rect(),
+                                        0.0,
+                                        ui.visuals().selection.bg_fill.linear_multiply(0.4),
+                                    );
+                                }
                                 let arrow = match self.sort {
                                     Some((c, true)) if c == col => " ▲",
                                     Some((c, false)) if c == col => " ▼",
@@ -143,17 +154,62 @@ impl eframe::App for App {
                     })
                     .body(|body| {
                         body.rows(18.0, self.rows.len(), |mut row| {
-                            let record = &self.rows[row.index()];
+                            let r = row.index();
+                            let record = &self.rows[r];
                             for i in 0..self.headers.len() {
                                 row.col(|ui| {
-                                    ui.label(
-                                        record.get(i).map(String::as_str).unwrap_or_default(),
+                                    let value = record
+                                        .get(i)
+                                        .map(String::as_str)
+                                        .unwrap_or_default();
+                                    let cell_rect = ui.max_rect();
+                                    let response = ui.interact(
+                                        cell_rect,
+                                        ui.id().with((r, i)),
+                                        egui::Sense::click(),
                                     );
+
+                                    if self.selected == Some((r, i)) {
+                                        ui.painter().rect_filled(
+                                            cell_rect,
+                                            0.0,
+                                            ui.visuals().selection.bg_fill,
+                                        );
+                                    }
+
+                                    ui.scope_builder(
+                                        egui::UiBuilder::new().max_rect(cell_rect),
+                                        |ui| {
+                                            ui.add(egui::Label::new(value).selectable(false));
+                                        },
+                                    );
+
+                                    if response.clicked() {
+                                        new_selection = Some((r, i));
+                                    }
                                 });
                             }
                         });
                     });
             });
+
+            if let Some(sel) = new_selection {
+                self.selected = Some(sel);
+            }
+
+            let copy = ui.input(|i| {
+                i.events
+                    .iter()
+                    .any(|event| matches!(event, egui::Event::Copy))
+                    || i.modifiers.command && i.key_pressed(egui::Key::C)
+            });
+            if copy
+                && let Some((r, c)) = self.selected
+                && let Some(value) = self.rows.get(r).and_then(|row| row.get(c))
+            {
+                ui.ctx().copy_text(value.clone());
+                self.status = format!("Copied cell ({}, {})", r + 1, c + 1);
+            }
         });
     }
 }
