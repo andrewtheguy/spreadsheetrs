@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-eframe = "0.34"
-egui_extras = "0.34"
+slint = "1.16"
 rfd = "0.17"
 csv = "1"
+arboard = "3"
+
+[build-dependencies]
+slint-build = "1.16"
