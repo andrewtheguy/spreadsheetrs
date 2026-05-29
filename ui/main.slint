@@ -1,0 +1,179 @@
+import { Button, ListView, VerticalBox, Palette } from "std-widgets.slint";
+
+// Bundle JetBrains Mono so the whole UI renders in it. The Slint compiler embeds
+// these files into the binary, registering the "JetBrains Mono" family with its
+// regular, bold, and italic faces.
+import "../assets/fonts/JetBrainsMono-Regular.ttf";
+import "../assets/fonts/JetBrainsMono-Bold.ttf";
+import "../assets/fonts/JetBrainsMono-Italic.ttf";
+
+// One header cell: clickable for sorting, shows a ▲/▼ arrow on the sorted column,
+// and highlights when a cell in its column is selected.
+component HeaderCell inherits Rectangle {
+    in property <string> title;
+    in property <bool> sorted;
+    in property <bool> ascending;
+    in property <bool> highlighted;
+    callback clicked();
+
+    width: 140px;
+    height: 28px;
+    background: highlighted ? Palette.accent-background.with-alpha(0.35) : Palette.alternate-background;
+    border-width: 1px;
+    border-color: Palette.border;
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        x: 6px;
+        width: parent.width - 12px;
+        height: 100%;
+        spacing: 4px;
+
+        // Title elides when too long, but the sort arrow keeps its own space so it
+        // is never clipped away.
+        Text {
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+            overflow: elide;
+            font-weight: 700;
+            text: root.title;
+        }
+
+        Text {
+            horizontal-stretch: 0;
+            vertical-alignment: center;
+            font-weight: 700;
+            text: root.sorted ? (root.ascending ? "▲" : "▼") : "";
+        }
+    }
+}
+
+// One data cell: clickable to select, highlighted when it is the selected cell.
+component DataCell inherits Rectangle {
+    in property <string> value;
+    in property <bool> selected;
+    callback clicked();
+
+    width: 140px;
+    height: 22px;
+    background: root.selected ? Palette.accent-background : Palette.background;
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        x: 6px;
+        width: parent.width - 12px;
+        height: 100%;
+        vertical-alignment: center;
+        overflow: elide;
+        color: root.selected ? Palette.accent-foreground : Palette.foreground;
+        text: root.value;
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "spreadsheetrs — CSV viewer";
+    preferred-width: 800px;
+    preferred-height: 600px;
+    default-font-family: "JetBrains Mono";
+
+    in property <[string]> headers;
+    in property <[[string]]> rows;
+    in property <string> status;
+    in property <string> version;
+    in property <int> selected-row: -1;
+    in property <int> selected-col: -1;
+    in property <int> sort-col: -1;
+    in property <bool> sort-ascending;
+    in property <bool> has-data;
+
+    callback open-csv();
+    callback header-clicked(int);
+    callback cell-clicked(int, int);
+    callback copy-selection();
+
+    VerticalBox {
+        // Top bar: open button, status text, and the build tag on the right.
+        HorizontalLayout {
+            spacing: 8px;
+            Button {
+                text: "Open CSV…";
+                clicked => { root.open-csv(); }
+            }
+
+            Text {
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+                text: root.status;
+            }
+
+            Text {
+                horizontal-stretch: 0;
+                vertical-alignment: center;
+                color: Palette.foreground.with-alpha(0.6);
+                text: root.version;
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Palette.border;
+        }
+
+        if !root.has-data: Text {
+            font-italic: true;
+            text: "No CSV loaded. Click \"Open CSV…\" to pick a file.";
+        }
+
+        if root.has-data: FocusScope {
+            // Grab keyboard focus so the copy shortcut works as soon as a table is shown.
+            init => { self.focus(); }
+
+            // Keyboard copy: Ctrl+C (Cmd+C on macOS) copies the selected cell.
+            key-pressed(event) => {
+                if (event.modifiers.control || event.modifiers.meta) && (event.text == "c" || event.text == "C") {
+                    root.copy-selection();
+                    return accept;
+                }
+                return reject;
+            }
+
+            // Horizontal scrolling for wide tables; the header sits above the
+            // vertically-virtualized ListView so it scrolls sideways with the body
+            // but stays pinned at the top.
+            Flickable {
+                viewport-width: root.headers.length * 140px;
+                viewport-height: self.height;
+
+                VerticalLayout {
+                    width: root.headers.length * 140px;
+
+                    HorizontalLayout {
+                        for title[idx] in root.headers: HeaderCell {
+                            title: title;
+                            sorted: idx == root.sort-col;
+                            ascending: root.sort-ascending;
+                            highlighted: idx == root.selected-col;
+                            clicked => { root.header-clicked(idx); }
+                        }
+                    }
+
+                    ListView {
+                        for row[r] in root.rows: HorizontalLayout {
+                            for cell[c] in row: DataCell {
+                                value: cell;
+                                selected: r == root.selected-row && c == root.selected-col;
+                                clicked => { root.cell-clicked(r, c); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

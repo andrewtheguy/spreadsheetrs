@@ -1,0 +1,147 @@
+name: Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  APP_NAME: spreadsheetrs
+  # Let the gh CLI resolve the repo even in jobs without a checkout.
+  GH_REPO: ${{ github.repository }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  create-release:
+    name: Create draft prerelease
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Compute release tag
+        id: meta
+        run: |
+          set -euo pipefail
+          # yyyymmddhhmmss (UTC) + short git sha from the GITHUB_SHA env variable.
+          TAG="$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG"
+
+      - name: Create draft prerelease
+        run: |
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --draft \
+            --prerelease \
+            --title "${{ steps.meta.outputs.tag }}" \
+            --target "$GITHUB_SHA" \
+            --generate-notes
+
+  macos:
+    name: macOS app (arm64)
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        env:
+          BUILD_TAG: ${{ needs.create-release.outputs.tag }}
+        run: cargo build --release
+
+      - name: Assemble .app bundle
+        run: |
+          set -euo pipefail
+          APP="${APP_NAME}.app"
+          rm -rf "$APP"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+
+          cp "target/release/${APP_NAME}" "$APP/Contents/MacOS/${APP_NAME}"
+          chmod +x "$APP/Contents/MacOS/${APP_NAME}"
+
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          cat > "$APP/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>${APP_NAME}</string>
+            <key>CFBundleDisplayName</key><string>${APP_NAME}</string>
+            <key>CFBundleExecutable</key><string>${APP_NAME}</string>
+            <key>CFBundleIdentifier</key><string>com.andrewtheguy.${APP_NAME}</string>
+            <key>CFBundleVersion</key><string>${VERSION}</string>
+            <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+
+          # Ad-hoc sign so Gatekeeper allows local launch.
+          codesign --force --deep --sign - "$APP"
+
+      - name: Package .app into zip
+        run: ditto -c -k --keepParent "${APP_NAME}.app" "${APP_NAME}-macos-arm64.zip"
+
+      - name: Generate SHA256 checksum
+        run: shasum -a 256 "${APP_NAME}-macos-arm64.zip" > "${APP_NAME}-macos-arm64.zip.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-macos-arm64
+          path: |
+            ${{ env.APP_NAME }}-macos-arm64.zip
+            ${{ env.APP_NAME }}-macos-arm64.zip.sha256
+
+      - name: Upload to release
+        run: gh release upload "${{ needs.create-release.outputs.tag }}" "${APP_NAME}-macos-arm64.zip" "${APP_NAME}-macos-arm64.zip.sha256" --clobber
+
+  windows:
+    name: Windows exe
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        env:
+          BUILD_TAG: ${{ needs.create-release.outputs.tag }}
+        run: cargo build --release
+
+      - name: Stage exe
+        shell: bash
+        run: |
+          mkdir dist
+          cp "target/release/${APP_NAME}.exe" "dist/${APP_NAME}.exe"
+
+      - name: Generate SHA256 checksum
+        shell: bash
+        run: |
+          cd dist
+          sha256sum "${APP_NAME}.exe" > "${APP_NAME}.exe.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-windows-x64
+          path: |
+            dist/${{ env.APP_NAME }}.exe
+            dist/${{ env.APP_NAME }}.exe.sha256
+
+      - name: Upload to release
+        shell: bash
+        run: gh release upload "${{ needs.create-release.outputs.tag }}" "dist/${APP_NAME}.exe" "dist/${APP_NAME}.exe.sha256" --clobber
+
+  publish:
+    name: Publish prerelease
+    needs: [create-release, macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish prerelease
+        run: gh release edit "${{ needs.create-release.outputs.tag }}" --draft=false --prerelease
