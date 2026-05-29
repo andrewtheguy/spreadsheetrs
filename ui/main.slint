@@ -89,6 +89,7 @@ export component MainWindow inherits Window {
     in property <[string]> headers;
     in property <[[string]]> rows;
     in property <string> status;
+    in property <string> version;
     in property <int> selected-row: -1;
     in property <int> selected-col: -1;
     in property <int> sort-col: -1;
@@ -101,18 +102,25 @@ export component MainWindow inherits Window {
     callback copy-selection();
 
     VerticalBox {
-        // Top bar: open button + status text.
+        // Top bar: open button, status text, and the build tag on the right.
         HorizontalLayout {
             spacing: 8px;
-            alignment: start;
             Button {
                 text: "Open CSV…";
                 clicked => { root.open-csv(); }
             }
 
             Text {
+                horizontal-stretch: 1;
                 vertical-alignment: center;
                 text: root.status;
+            }
+
+            Text {
+                horizontal-stretch: 0;
+                vertical-alignment: center;
+                color: Palette.foreground.with-alpha(0.6);
+                text: root.version;
             }
         }
 

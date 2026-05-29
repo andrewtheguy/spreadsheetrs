@@ -47,6 +47,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build
+        env:
+          BUILD_TAG: ${{ needs.create-release.outputs.tag }}
         run: cargo build --release
 
       - name: Assemble .app bundle
@@ -106,6 +108,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build
+        env:
+          BUILD_TAG: ${{ needs.create-release.outputs.tag }}
         run: cargo build --release
 
       - name: Stage exe

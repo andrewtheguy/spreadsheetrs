@@ -28,6 +28,7 @@ struct State {
 fn main() -> Result<(), slint::PlatformError> {
     let ui = MainWindow::new()?;
     ui.set_status("No CSV loaded".into());
+    ui.set_version(env!("BUILD_TAG").into());
 
     let state = Rc::new(RefCell::new(State::default()));
 
