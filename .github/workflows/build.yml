@@ -3,13 +3,44 @@ name: Build
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
   APP_NAME: spreadsheetrs
+  # Let the gh CLI resolve the repo even in jobs without a checkout.
+  GH_REPO: ${{ github.repository }}
+  GH_TOKEN: ${{ github.token }}
 
 jobs:
+  create-release:
+    name: Create draft prerelease
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Compute release tag
+        id: meta
+        run: |
+          set -euo pipefail
+          # yyyymmddhhmmss (UTC) + short git sha from the GITHUB_SHA env variable.
+          TAG="$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG"
+
+      - name: Create draft prerelease
+        run: |
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --draft \
+            --prerelease \
+            --title "${{ steps.meta.outputs.tag }}" \
+            --target "$GITHUB_SHA" \
+            --notes "Automated build of ${GITHUB_SHA::7}"
+
   macos:
     name: macOS app (arm64)
+    needs: create-release
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,8 +90,12 @@ jobs:
           name: ${{ env.APP_NAME }}-macos-arm64
           path: ${{ env.APP_NAME }}-macos-arm64.zip
 
+      - name: Upload to release
+        run: gh release upload "${{ needs.create-release.outputs.tag }}" "${APP_NAME}-macos-arm64.zip" --clobber
+
   windows:
     name: Windows exe
+    needs: create-release
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,3 +119,15 @@ jobs:
         with:
           name: ${{ env.APP_NAME }}-windows-x64
           path: dist/${{ env.APP_NAME }}.exe
+
+      - name: Upload to release
+        shell: bash
+        run: gh release upload "${{ needs.create-release.outputs.tag }}" "dist/${APP_NAME}.exe" --clobber
+
+  publish:
+    name: Publish prerelease
+    needs: [create-release, macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish prerelease
+        run: gh release edit "${{ needs.create-release.outputs.tag }}" --draft=false --prerelease
