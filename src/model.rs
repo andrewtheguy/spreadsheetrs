@@ -27,7 +27,7 @@ pub fn sort_rows(rows: &mut [Vec<String>], col: usize, ascending: bool) {
         let left = a.get(col).map(String::as_str).unwrap_or_default();
         let right = b.get(col).map(String::as_str).unwrap_or_default();
         let ordering = match (left.parse::<f64>(), right.parse::<f64>()) {
-            (Ok(l), Ok(r)) => l.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal),
+            (Ok(l), Ok(r)) => l.total_cmp(&r),
             _ => left.cmp(right),
         };
         if ascending {
