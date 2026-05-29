@@ -51,19 +51,15 @@ component HeaderCell inherits Rectangle {
     }
 }
 
-// One data cell: clickable to select, highlighted when it is the selected cell,
-// otherwise striped by row parity.
+// One data cell: clickable to select, highlighted when it is the selected cell.
 component DataCell inherits Rectangle {
     in property <string> value;
     in property <bool> selected;
-    in property <bool> odd-row;
     callback clicked();
 
     width: 140px;
     height: 22px;
-    background: root.selected
-        ? Palette.accent-background
-        : (root.odd-row ? Palette.alternate-background : Palette.background);
+    background: root.selected ? Palette.accent-background : Palette.background;
 
     TouchArea {
         clicked => { root.clicked(); }
@@ -172,7 +168,6 @@ export component MainWindow inherits Window {
                             for cell[c] in row: DataCell {
                                 value: cell;
                                 selected: r == root.selected-row && c == root.selected-col;
-                                odd-row: Math.mod(r, 2) == 1;
                                 clicked => { root.cell-clicked(r, c); }
                             }
                         }
