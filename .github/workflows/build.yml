@@ -61,7 +61,7 @@ jobs:
           cp "target/release/${APP_NAME}" "$APP/Contents/MacOS/${APP_NAME}"
           chmod +x "$APP/Contents/MacOS/${APP_NAME}"
 
-          VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
           cat > "$APP/Contents/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -86,14 +86,19 @@ jobs:
       - name: Package .app into zip
         run: ditto -c -k --keepParent "${APP_NAME}.app" "${APP_NAME}-macos-arm64.zip"
 
+      - name: Generate SHA256 checksum
+        run: shasum -a 256 "${APP_NAME}-macos-arm64.zip" > "${APP_NAME}-macos-arm64.zip.sha256"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-macos-arm64
-          path: ${{ env.APP_NAME }}-macos-arm64.zip
+          path: |
+            ${{ env.APP_NAME }}-macos-arm64.zip
+            ${{ env.APP_NAME }}-macos-arm64.zip.sha256
 
       - name: Upload to release
-        run: gh release upload "${{ needs.create-release.outputs.tag }}" "${APP_NAME}-macos-arm64.zip" --clobber
+        run: gh release upload "${{ needs.create-release.outputs.tag }}" "${APP_NAME}-macos-arm64.zip" "${APP_NAME}-macos-arm64.zip.sha256" --clobber
 
   windows:
     name: Windows exe
@@ -115,15 +120,23 @@ jobs:
           mkdir dist
           cp "target/release/${APP_NAME}.exe" "dist/${APP_NAME}.exe"
 
+      - name: Generate SHA256 checksum
+        shell: bash
+        run: |
+          cd dist
+          sha256sum "${APP_NAME}.exe" > "${APP_NAME}.exe.sha256"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-windows-x64
-          path: dist/${{ env.APP_NAME }}.exe
+          path: |
+            dist/${{ env.APP_NAME }}.exe
+            dist/${{ env.APP_NAME }}.exe.sha256
 
       - name: Upload to release
         shell: bash
-        run: gh release upload "${{ needs.create-release.outputs.tag }}" "dist/${APP_NAME}.exe" --clobber
+        run: gh release upload "${{ needs.create-release.outputs.tag }}" "dist/${APP_NAME}.exe" "dist/${APP_NAME}.exe.sha256" --clobber
 
   publish:
     name: Publish prerelease
