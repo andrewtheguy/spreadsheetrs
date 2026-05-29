@@ -11,8 +11,55 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "spreadsheetrs",
         native_options,
-        Box::new(|_cc| Ok(Box::<App>::default())),
+        Box::new(|cc| {
+            install_fonts(&cc.egui_ctx);
+            Ok(Box::<App>::default())
+        }),
     )
+}
+
+/// Register JetBrains Mono (bundled in the binary) as the default proportional
+/// and monospace font so the whole UI uses it.
+fn install_fonts(ctx: &egui::Context) {
+    use egui::{FontData, FontDefinitions, FontFamily};
+
+    let mut fonts = FontDefinitions::default();
+    fonts.font_data.insert(
+        "jetbrains-mono".to_owned(),
+        std::sync::Arc::new(FontData::from_static(include_bytes!(
+            "../assets/fonts/JetBrainsMono-Regular.ttf"
+        ))),
+    );
+    fonts.font_data.insert(
+        "jetbrains-mono-bold".to_owned(),
+        std::sync::Arc::new(FontData::from_static(include_bytes!(
+            "../assets/fonts/JetBrainsMono-Bold.ttf"
+        ))),
+    );
+    fonts.font_data.insert(
+        "jetbrains-mono-italic".to_owned(),
+        std::sync::Arc::new(FontData::from_static(include_bytes!(
+            "../assets/fonts/JetBrainsMono-Italic.ttf"
+        ))),
+    );
+
+    for family in [FontFamily::Proportional, FontFamily::Monospace] {
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .insert(0, "jetbrains-mono".to_owned());
+    }
+
+    // Named families for bold table headers and italic status text.
+    fonts
+        .families
+        .insert(FontFamily::Name("bold".into()), vec!["jetbrains-mono-bold".to_owned()]);
+    fonts
+        .families
+        .insert(FontFamily::Name("italic".into()), vec!["jetbrains-mono-italic".to_owned()]);
+
+    ctx.set_fonts(fonts);
 }
 
 /// Parsed contents of a CSV file: the first record as column titles, plus the
@@ -28,6 +75,8 @@ struct App {
     headers: Vec<String>,
     rows: Vec<Vec<String>>,
     status: String,
+    /// Column the table is currently sorted by, and whether it is ascending.
+    sort: Option<(usize, bool)>,
 }
 
 impl eframe::App for App {
@@ -44,6 +93,7 @@ impl eframe::App for App {
                             );
                             self.headers = data.headers;
                             self.rows = data.rows;
+                            self.sort = None;
                         }
                         Err(error) => self.status = error,
                     }
@@ -54,7 +104,10 @@ impl eframe::App for App {
             ui.separator();
 
             if self.headers.is_empty() {
-                ui.label("No CSV loaded. Click \"Open CSV…\" to pick a file.");
+                ui.label(
+                    egui::RichText::new("No CSV loaded. Click \"Open CSV…\" to pick a file.")
+                        .family(egui::FontFamily::Name("italic".into())),
+                );
                 return;
             }
 
@@ -66,10 +119,23 @@ impl eframe::App for App {
                         self.headers.len(),
                     )
                     .header(20.0, |mut header| {
-                        for title in &self.headers {
+                        let mut clicked: Option<usize> = None;
+                        for (col, title) in self.headers.iter().enumerate() {
                             header.col(|ui| {
-                                ui.strong(title);
+                                let arrow = match self.sort {
+                                    Some((c, true)) if c == col => " ▲",
+                                    Some((c, false)) if c == col => " ▼",
+                                    _ => "",
+                                };
+                                let label = egui::RichText::new(format!("{title}{arrow}"))
+                                    .family(egui::FontFamily::Name("bold".into()));
+                                if ui.button(label).clicked() {
+                                    clicked = Some(col);
+                                }
                             });
+                        }
+                        if let Some(col) = clicked {
+                            self.toggle_sort(col);
                         }
                     })
                     .body(|body| {
@@ -86,6 +152,31 @@ impl eframe::App for App {
                     });
             });
         });
+    }
+}
+
+impl App {
+    /// Sort rows by `col`. Clicking a new column sorts ascending; clicking the
+    /// already-sorted column flips the direction.
+    fn toggle_sort(&mut self, col: usize) {
+        let ascending = match self.sort {
+            Some((c, asc)) if c == col => !asc,
+            _ => true,
+        };
+        self.rows.sort_by(|a, b| {
+            let left = a.get(col).map(String::as_str).unwrap_or_default();
+            let right = b.get(col).map(String::as_str).unwrap_or_default();
+            let ordering = match (left.parse::<f64>(), right.parse::<f64>()) {
+                (Ok(l), Ok(r)) => l.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal),
+                _ => left.cmp(right),
+            };
+            if ascending {
+                ordering
+            } else {
+                ordering.reverse()
+            }
+        });
+        self.sort = Some((col, ascending));
     }
 }
 
