@@ -1,3 +1,7 @@
+// Hide the Windows console window for release builds (the GUI is the only UI).
+// Debug builds keep the console so logs/panics remain visible during development.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::cell::RefCell;
 use std::rc::Rc;
 
