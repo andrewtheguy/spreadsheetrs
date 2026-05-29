@@ -58,26 +58,33 @@ impl eframe::App for App {
                 return;
             }
 
-            TableBuilder::new(ui)
-                .striped(true)
-                .columns(Column::auto().resizable(true), self.headers.len())
-                .header(20.0, |mut header| {
-                    for title in &self.headers {
-                        header.col(|ui| {
-                            ui.strong(title);
-                        });
-                    }
-                })
-                .body(|body| {
-                    body.rows(18.0, self.rows.len(), |mut row| {
-                        let record = &self.rows[row.index()];
-                        for i in 0..self.headers.len() {
-                            row.col(|ui| {
-                                ui.label(record.get(i).map(String::as_str).unwrap_or_default());
+            egui::ScrollArea::horizontal().show(ui, |ui| {
+                TableBuilder::new(ui)
+                    .striped(true)
+                    .columns(
+                        Column::initial(140.0).at_least(40.0).clip(true).resizable(true),
+                        self.headers.len(),
+                    )
+                    .header(20.0, |mut header| {
+                        for title in &self.headers {
+                            header.col(|ui| {
+                                ui.strong(title);
                             });
                         }
+                    })
+                    .body(|body| {
+                        body.rows(18.0, self.rows.len(), |mut row| {
+                            let record = &self.rows[row.index()];
+                            for i in 0..self.headers.len() {
+                                row.col(|ui| {
+                                    ui.label(
+                                        record.get(i).map(String::as_str).unwrap_or_default(),
+                                    );
+                                });
+                            }
+                        });
                     });
-                });
+            });
         });
     }
 }
