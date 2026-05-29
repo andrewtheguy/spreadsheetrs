@@ -36,7 +36,7 @@ jobs:
             --prerelease \
             --title "${{ steps.meta.outputs.tag }}" \
             --target "$GITHUB_SHA" \
-            --notes "Automated build of ${GITHUB_SHA::7}"
+            --generate-notes
 
   macos:
     name: macOS app (arm64)
