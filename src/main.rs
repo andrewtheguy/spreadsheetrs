@@ -2,32 +2,18 @@
 // Debug builds keep the console so logs/panics remain visible during development.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod csv_io;
+mod model;
+mod ui;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use slint::{ModelRc, SharedString, VecModel};
+use csv_io::pick_and_parse;
+use model::{State, sort_rows};
+use ui::{copy_to_clipboard, push_to_ui, rows_model};
 
 slint::include_modules!();
-
-/// Parsed contents of a CSV file: the first record as column titles, plus the
-/// remaining records as data rows.
-#[derive(Debug, Clone, Default)]
-struct CsvData {
-    headers: Vec<String>,
-    rows: Vec<Vec<String>>,
-}
-
-/// Mutable application state shared across the Slint callbacks.
-#[derive(Default)]
-struct State {
-    data: CsvData,
-    /// Rows in their original load order, used to restore the unsorted view.
-    original_rows: Vec<Vec<String>>,
-    /// Column the table is currently sorted by, and whether it is ascending.
-    sort: Option<(usize, bool)>,
-    /// Currently selected cell as `(row, column)`.
-    selected: Option<(usize, usize)>,
-}
 
 fn main() -> Result<(), slint::PlatformError> {
     let ui = MainWindow::new()?;
@@ -122,85 +108,4 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     ui.run()
-}
-
-/// Sort `rows` by `col`. Numeric columns sort numerically; everything else falls
-/// back to lexicographic order. `ascending` reverses the comparison when false.
-fn sort_rows(rows: &mut [Vec<String>], col: usize, ascending: bool) {
-    rows.sort_by(|a, b| {
-        let left = a.get(col).map(String::as_str).unwrap_or_default();
-        let right = b.get(col).map(String::as_str).unwrap_or_default();
-        let ordering = match (left.parse::<f64>(), right.parse::<f64>()) {
-            (Ok(l), Ok(r)) => l.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal),
-            _ => left.cmp(right),
-        };
-        if ascending {
-            ordering
-        } else {
-            ordering.reverse()
-        }
-    });
-}
-
-/// Replace the UI's headers/rows with `data` and reset the selection.
-fn push_to_ui(ui: &MainWindow, data: &CsvData) {
-    let headers: Vec<SharedString> = data.headers.iter().map(SharedString::from).collect();
-    ui.set_headers(ModelRc::new(VecModel::from(headers)));
-    ui.set_rows(rows_model(&data.rows));
-    ui.set_has_data(!data.headers.is_empty());
-    ui.set_sort_col(-1);
-    ui.set_selected_row(-1);
-    ui.set_selected_col(-1);
-}
-
-/// Build a Slint model-of-models (`[[string]]`) from the parsed rows.
-fn rows_model(rows: &[Vec<String>]) -> ModelRc<ModelRc<SharedString>> {
-    let rows: Vec<ModelRc<SharedString>> = rows
-        .iter()
-        .map(|row| {
-            let cells: Vec<SharedString> = row.iter().map(SharedString::from).collect();
-            ModelRc::new(VecModel::from(cells))
-        })
-        .collect();
-    ModelRc::new(VecModel::from(rows))
-}
-
-/// Write `value` to the system clipboard, returning a human-readable error on failure.
-fn copy_to_clipboard(value: &str) -> Result<(), SharedString> {
-    let mut clipboard = arboard::Clipboard::new().map_err(|e| SharedString::from(e.to_string()))?;
-    clipboard
-        .set_text(value.to_owned())
-        .map_err(|e| SharedString::from(e.to_string()))
-}
-
-/// Open a native file picker, read the chosen CSV, and parse it.
-fn pick_and_parse() -> Result<CsvData, String> {
-    let path = rfd::FileDialog::new()
-        .add_filter("CSV", &["csv"])
-        .pick_file()
-        .ok_or_else(|| "No file selected".to_string())?;
-
-    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .flexible(true)
-        .from_reader(bytes.as_slice());
-
-    let mut records = reader.records();
-
-    let headers: Vec<String> = records
-        .next()
-        .ok_or_else(|| "CSV file is empty".to_string())?
-        .map_err(|e| e.to_string())?
-        .iter()
-        .map(str::to_string)
-        .collect();
-
-    let rows: Vec<Vec<String>> = records
-        .map(|record| record.map(|rec| rec.iter().map(str::to_string).collect()))
-        .collect::<Result<_, _>>()
-        .map_err(|e| e.to_string())?;
-
-    Ok(CsvData { headers, rows })
 }
