@@ -17,6 +17,8 @@ struct CsvData {
 #[derive(Default)]
 struct State {
     data: CsvData,
+    /// Rows in their original load order, used to restore the unsorted view.
+    original_rows: Vec<Vec<String>>,
     /// Column the table is currently sorted by, and whether it is ascending.
     sort: Option<(usize, bool)>,
     /// Currently selected cell as `(row, column)`.
@@ -43,6 +45,7 @@ fn main() -> Result<(), slint::PlatformError> {
                         data.headers.len()
                     );
                     let mut state = state.borrow_mut();
+                    state.original_rows = data.rows.clone();
                     state.data = data;
                     state.sort = None;
                     state.selected = None;
@@ -62,15 +65,20 @@ fn main() -> Result<(), slint::PlatformError> {
             let Some(ui) = ui_weak.upgrade() else { return };
             let col = col as usize;
             let mut state = state.borrow_mut();
-            let ascending = match state.sort {
-                Some((c, asc)) if c == col => !asc,
-                _ => true,
+            // Cycle the clicked column: unsorted → ascending → descending → unsorted.
+            let next = match state.sort {
+                Some((c, true)) if c == col => Some((col, false)),
+                Some((c, false)) if c == col => None,
+                _ => Some((col, true)),
             };
-            sort_rows(&mut state.data.rows, col, ascending);
-            state.sort = Some((col, ascending));
+            match next {
+                Some((col, ascending)) => sort_rows(&mut state.data.rows, col, ascending),
+                None => state.data.rows = state.original_rows.clone(),
+            }
+            state.sort = next;
             state.selected = None;
-            ui.set_sort_col(col as i32);
-            ui.set_sort_ascending(ascending);
+            ui.set_sort_col(next.map_or(-1, |(c, _)| c as i32));
+            ui.set_sort_ascending(next.is_some_and(|(_, asc)| asc));
             ui.set_selected_row(-1);
             ui.set_selected_col(-1);
             ui.set_rows(rows_model(&state.data.rows));
